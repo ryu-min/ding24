@@ -29,8 +29,10 @@ def fen_to_tensor(fen):
             plane = piece_map[piece.piece_type] + (6 if piece.color == chess.BLACK else 0)
             tensor[plane, square // 8, square % 8] = 1
 
-    # Поворот доски на 180 градусов для упрощения
-    # tensor = np.rot90(tensor, k=2, axes=(1, 2))
+    is_white_turn = board.turn == chess.WHITE
+    if not is_white_turn:
+        tensor = np.rot90(tensor, k=2, axes=(1, 2))
+
     return tensor
 
 class ChessCNN(nn.Module):
@@ -84,7 +86,11 @@ class ChessDataset(Dataset):
             reader = csv.reader(infile)
             next(reader)  # пропустить заголовок
 
+            count = 0
             for row in reader:
+                if (count > 100000):
+                    break
+                count += 1
                 try:
                     fen = row[0]
                     evaluation = row[1]
@@ -126,9 +132,14 @@ if __name__ == "__main__":
     criterion = nn.MSELoss()  # Используйте MSE для регрессии
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    num_epochs = 10
-    step = 0
+    fixed_width = 50  # Ширина строки, не считая loss
+    epoch_width = 6  # Ширина для epoch
+    step_width = 4   # Ширина для step
+    loss_width = 10   # Ширина для loss
+
+    num_epochs = 100
     for epoch in range(num_epochs):
+        step = 0        
         for inputs, labels in dataloader:
             optimizer.zero_grad()
             outputs = model(inputs)
@@ -137,7 +148,14 @@ if __name__ == "__main__":
             optimizer.step()
     
             # Вывод прогресса
-            sys.stdout.write(f"\rEpoch [{epoch+1}/{num_epochs}], Step [{step}], Loss: {loss.item():.4f}")
+            # sys.stdout.write(f"\rEpoch [{epoch+1}/{num_epochs}], Step [{step}], Loss: {loss.item():.4f}")
+            # sys.stdout.flush()
+
+            sys.stdout.write(
+                f"\rEpoch [{epoch + 1:>{epoch_width}}/{num_epochs}], "
+                f"Step [{step:>{step_width}}], "
+                f"Loss: {loss.item():.4f}".ljust(fixed_width)
+            )
             sys.stdout.flush()
             step += 1
     
