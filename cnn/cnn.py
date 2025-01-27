@@ -39,7 +39,6 @@ class ChessCNN(nn.Module):
     def __init__(self):
         super(ChessCNN, self).__init__()
 
-        # Слои свертки
         self.conv_layers = nn.Sequential(
             nn.Conv2d(12, 32, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -62,10 +61,13 @@ class ChessCNN(nn.Module):
         self.fc_layers = nn.Sequential(
             nn.Linear(128 * 2 * 2, 1024),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(1024, 512),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(512, 256),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(256, 1)
         )
 
@@ -79,6 +81,9 @@ class ChessCNN(nn.Module):
 MATE_VALUE_WHITE = 10000.0
 MATE_VALUE_BLACK = -10000.0
 
+def normalize_output(output):
+    return output / 10000.0
+
 class ChessDataset(Dataset):
     def __init__(self, csv_file):
         self.data = []
@@ -88,7 +93,7 @@ class ChessDataset(Dataset):
 
             count = 0
             for row in reader:
-                if (count > 100000):
+                if (count > 10000):
                     break
                 count += 1
                 try:
@@ -103,7 +108,7 @@ class ChessDataset(Dataset):
                     else:
                         evaluation_value = float(evaluation.split()[0])
 
-                    self.data.append((fen, evaluation_value))
+                    self.data.append((fen, normalize_output(evaluation_value)))
 
                 except Exception as e:
                     print(f"Unexpected error: {e} - row: {row}")
@@ -130,36 +135,27 @@ if __name__ == "__main__":
 
     model = ChessCNN()
     criterion = nn.MSELoss()  # Используйте MSE для регрессии
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
-    fixed_width = 50  # Ширина строки, не считая loss
-    epoch_width = 6  # Ширина для epoch
-    step_width = 4   # Ширина для step
-    loss_width = 10   # Ширина для loss
-
-    num_epochs = 100
+    num_epochs = 1000
     for epoch in range(num_epochs):
+        total_loss = 0.0
         step = 0        
+        total_steps = len(dataloader)        
         for inputs, labels in dataloader:
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs.squeeze(), labels)
             loss.backward()
             optimizer.step()
-    
-            # Вывод прогресса
-            # sys.stdout.write(f"\rEpoch [{epoch+1}/{num_epochs}], Step [{step}], Loss: {loss.item():.4f}")
-            # sys.stdout.flush()
-
-            sys.stdout.write(
-                f"\rEpoch [{epoch + 1:>{epoch_width}}/{num_epochs}], "
-                f"Step [{step:>{step_width}}], "
-                f"Loss: {loss.item():.4f}".ljust(fixed_width)
-            )
-            sys.stdout.flush()
+            
+            total_loss += loss.item()  # Суммируем потери
             step += 1
-    
-        print()  # Переход на новую строку после завершения эпохи
+            
+            print(f"Epoch [{epoch+1}/{num_epochs}], Step [{step}/{total_steps}], Loss: {loss.item():.4f}", end='\r', flush=True)
+
+        average_loss = total_loss / total_steps
+        print(f"\nAverage Loss for Epoch [{epoch+1}/{num_epochs}]: {average_loss:.10f}")
 
         # Сохранение модели и оптимизатора
         torch.save({
