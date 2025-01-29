@@ -4,12 +4,9 @@ import chess
 from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import pandas as pd
 from torch.utils.data import Dataset
 import csv
 import argparse
-import sys
 
 MATE_VALUE_WHITE = 10000.0
 MATE_VALUE_BLACK = -10000.0
@@ -28,7 +25,7 @@ class ChessDataset(Dataset):
 
             count = 0
             for row in reader:
-                if count > 500000:
+                if count > 1000000:
                     break
                 count += 1
                 try:
@@ -45,13 +42,11 @@ class ChessDataset(Dataset):
 
                     self.data.append((fen, evaluation_value))
 
-                    # Обновляем максимальное значение
                     self.max_value = max(self.max_value, abs(evaluation_value))
 
                 except Exception as e:
                     print(f"Unexpected error: {e} - row: {row}")
 
-        # Нормализуем оценки после того, как мы собрали все данные
         self.data = [(fen, normalize_output(evaluation_value, self.max_value)) for fen, evaluation_value in self.data]
 
     def __len__(self):
@@ -60,8 +55,8 @@ class ChessDataset(Dataset):
     def __getitem__(self, idx):
         fen, evaluation_value = self.data[idx]
 
-        tensor = fen_to_matrix(fen)  # Предполагается, что у вас есть функция fen_to_tensor
-        tensor = torch.tensor(tensor.copy()).float()  # Преобразование в тензор PyTorch
+        tensor = fen_to_matrix(fen)
+        tensor = torch.tensor(tensor.copy()).float()
         evaluation_tensor = torch.tensor(evaluation_value).float()
 
         return tensor, evaluation_tensor
@@ -71,10 +66,8 @@ if __name__ == "__main__":
     parser.add_argument('dataset_file', type=str, help='Path to the input CSV file with training data')
     args = parser.parse_args()
     
-    # Загрузка данных
     dataset = ChessDataset(args.dataset_file)
     
-    # Разделение на обучающую и валидационную выборки (80% на обучение, 20% на валидацию)
     train_size = int(0.9 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -83,12 +76,11 @@ if __name__ == "__main__":
     val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 
     model = ChessCNN()
-    criterion = nn.MSELoss()  # Используйте MSE для регрессии
+    criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
     num_epochs = 1000
     for epoch in range(num_epochs):
-        # Обучение
         model.train()
         total_loss = 0.0
         step = 0        
@@ -100,7 +92,7 @@ if __name__ == "__main__":
             loss.backward()
             optimizer.step()
             
-            total_loss += loss.item()  # Суммируем потери
+            total_loss += loss.item()
             step += 1
             
             print(f"Epoch [{epoch+1}/{num_epochs}], Step [{step}/{total_steps}], Loss: {loss.item():.12f}", end='\r', flush=True)
@@ -109,9 +101,9 @@ if __name__ == "__main__":
         print(f"\nAverage Loss for Epoch [{epoch+1}/{num_epochs}]: {average_loss:.12f}")
 
         # Валидация
-        model.eval()  # Переключаемся в режим оценки
+        model.eval()
         val_loss = 0.0
-        with torch.no_grad():  # Отключаем градиенты для валидации
+        with torch.no_grad():
             for inputs, labels in val_dataloader:
                 outputs = model(inputs)
                 loss = criterion(outputs.squeeze(), labels)
@@ -120,10 +112,9 @@ if __name__ == "__main__":
         average_val_loss = val_loss / len(val_dataloader)
         print(f"Validation Loss for Epoch [{epoch+1}/{num_epochs}]: {average_val_loss:.12f}")
 
-        # Сохранение модели и оптимизатора
         torch.save({
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': loss.item(),
-        }, f'model_500k_epoch_{epoch+1}.pt')
+        }, f'model_1kk_epoch_{epoch+1}.pt')

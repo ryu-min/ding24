@@ -1,14 +1,7 @@
 import numpy as np
 import chess
-from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import pandas as pd
-from torch.utils.data import Dataset
-import csv
-import argparse
-import sys
 
 squares_index = {
     'a': 0,
@@ -87,3 +80,62 @@ class ChessCNN(nn.Module):
         x = x.view(x.size(0), -1)  # Преобразуем тензор в вектор
         x = self.fc_layers(x)
         return x
+
+def load_model(model, optimizer, checkpoint_path):
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    loss = checkpoint['loss']
+    return epoch, loss
+
+def minimax_eval(board, model):
+    return model(torch.tensor(fen_to_matrix(board.fen()).copy()).float().unsqueeze(0)).item()  # Оценка хода
+
+def minimax(board, depth, alpha, beta, maximizing_player, model):
+    if depth == 0 or board.is_game_over():
+        return minimax_eval(board, model)
+
+    if maximizing_player:
+        max_eval = -np.inf
+        for move in board.legal_moves:
+            board.push(move)
+            eval = minimax(board, depth - 1, alpha, beta, False, model)
+            board.pop()
+            max_eval = max(max_eval, eval)
+            alpha = max(alpha, eval)
+            if beta <= alpha:
+                break
+        return max_eval
+    else:
+        min_eval = np.inf
+        for move in board.legal_moves:
+            board.push(move)
+            eval = minimax(board, depth - 1, alpha, beta, True, model)
+            board.pop()
+            min_eval = min(min_eval, eval)
+            beta = min(beta, eval)
+            if beta <= alpha:
+                break
+        return min_eval
+
+def predict_move(model, board, depth):
+    max_move = None
+    max_eval = -np.inf
+
+    for move in board.legal_moves:
+        board.push(move)
+        if board.is_checkmate():
+            board.pop()
+            return move 
+        board.pop()
+
+    for move in board.legal_moves:
+        board.push(move)
+        eval = minimax(board, depth - 1, -np.inf, np.inf, False, model)
+        board.pop()
+        if eval > max_eval:
+            max_eval = eval
+            max_move = move
+
+    return max_move
