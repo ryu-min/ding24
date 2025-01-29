@@ -3,7 +3,7 @@ import argparse
 import chess
 import random
 import os
-from cnn import ChessCNN, load_model, predict_move
+import requests
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -51,32 +51,29 @@ def choose_best_move(board):
 
     return None
 
+def get_best_move_from_service(fen):
+    response = requests.post('http://127.0.0.1:5000/best_move', json={'fen': fen})
+    
+    if response.status_code == 200:
+        return response.json().get('best_move')
+    else:
+        print("Ошибка при получении хода:", response.json().get('error'))
+        return None
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Chess AI using a neural network")
-    parser.add_argument('model_file', type=str, help='Path to the saved model file')
-    parser.add_argument('depth', type=int, help='tree depth')
-    args = parser.parse_args()
-
-    depth = args.depth
-
-    model = ChessCNN()
-    optimizer = torch.optim.Adam(model.parameters())
-
-    load_model(model, optimizer, args.model_file)
-
     board = chess.Board()
 
     print("Нейросеть делает первый ход...")
-    best_move = predict_move(model, board, depth)
+    best_move = get_best_move_from_service(board.fen())
     
     if best_move:
-        board.push(best_move)
+        board.push(chess.Move.from_uci(best_move))
 
     while not board.is_game_over():
         clear_screen()
         print(board)
 
-        sample_move = choose_best_move(board)
+        sample_move = choose_best_move(board)  # Вы можете оставить эту функцию или убрать, если она не нужна
         board.push(sample_move)
 
         if board.is_game_over():
@@ -85,9 +82,9 @@ if __name__ == "__main__":
         clear_screen()
         print(board)
 
-        best_move = predict_move(model, board, depth)
+        best_move = get_best_move_from_service(board.fen())
         if best_move:
-            board.push(best_move)
+            board.push(chess.Move.from_uci(best_move))
 
     clear_screen()
     print(board)
