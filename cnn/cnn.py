@@ -1,6 +1,6 @@
 import numpy as np
 import chess
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,157 +10,80 @@ import csv
 import argparse
 import sys
 
-def fen_to_tensor(fen):
+squares_index = {
+    'a': 0,
+    'b': 1,
+    'c': 2,
+    'd': 3,
+    'e': 4,
+    'f': 5,
+    'g': 6,
+    'h': 7,
+}
+
+def square_to_index(square):
+    letter = chess.square_name(square)  # Get algebraic notation of the square
+    row = 8 - int(letter[1]) # Convert rank to row index
+    column = squares_index[letter[0]]  # Map file to column index using board_positions dictionary
+    return row, column 
+
+def fen_to_matrix(fen):
     board = chess.Board(fen)
-    tensor = np.zeros((12, 8, 8), dtype=np.float32)  # 12 каналов для всех фигур
+    board_3d = np.zeros((14, 8, 8), dtype=np.int8)
 
-    piece_map = {
-        chess.PAWN: 0,
-        chess.KNIGHT: 1,
-        chess.BISHOP: 2,
-        chess.ROOK: 3,
-        chess.QUEEN: 4,
-        chess.KING: 5,
-    }
+    for piece in chess.PIECE_TYPES:
+        for square in board.pieces(piece, chess.WHITE):
+            index = np.unravel_index(square, (8, 8))
+            board_3d[piece - 1][7 - index[0]][index[1]] = 1
 
-    for square in chess.SQUARES:
-        piece = board.piece_at(square)
-        if piece is not None:
-            plane = piece_map[piece.piece_type] + (6 if piece.color == chess.BLACK else 0)
-            tensor[plane, square // 8, square % 8] = 1
+        for square in board.pieces(piece, chess.BLACK):
+            index = np.unravel_index(square, (8, 8))
+            board_3d[piece + 5][7 - index[0]][index[1]] = 1
 
-    is_white_turn = board.turn == chess.WHITE
-    if not is_white_turn:
-        tensor = np.rot90(tensor, k=2, axes=(1, 2))
+    aux = board.turn
+    board.turn = chess.WHITE
+    for move in board.legal_moves:
+        i, j = square_to_index(move.to_square)
+        board_3d[12][i][j] = 1  # Layer 12
 
-    return tensor
+    board.turn = chess.BLACK
+    for move in board.legal_moves:
+        i, j = square_to_index(move.to_square)
+        board_3d[13][i][j] = 1  # Layer 13
+
+    board.turn = aux
+
+    return board_3d 
 
 class ChessCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, conv_size=16, conv_depth=12, fc_depth=2):
         super(ChessCNN, self).__init__()
 
-        self.conv_layers = nn.Sequential(
-            nn.Conv2d(12, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # Выход (32, 4, 4)
+        # Сверточные слои
+        layers = []
+        in_channels = 14  # Начальное количество каналов (как в Keras)
 
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # Выход (64, 2, 2)
+        for _ in range(conv_depth):
+            layers.append(nn.Conv2d(in_channels, conv_size, kernel_size=3, padding=1))
+            layers.append(nn.ReLU())
+            in_channels = conv_size  # Обновляем количество входных каналов для следующего слоя
 
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-        )
+        self.conv_layers = nn.Sequential(*layers)
 
-        self.fc_layers = nn.Sequential(
-            nn.Linear(128 * 2 * 2, 1024),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(256, 1)
-        )
+        # Полносвязные слои
+        fc_layers = []
+        input_size = conv_size * 8 * 8  # Размер после свертки, предполагается без подвыборки
+        
+        for _ in range(fc_depth):
+            fc_layers.append(nn.Linear(input_size, 64))  # Все скрытые слои имеют 64 нейрона
+            fc_layers.append(nn.ReLU())
+            input_size = 64  # Обновляем размер входа для следующего слоя
+
+        fc_layers.append(nn.Linear(64, 1))  # Один выходной нейрон
+        self.fc_layers = nn.Sequential(*fc_layers)
 
     def forward(self, x):
         x = self.conv_layers(x)
-        x = x.view(x.size(0), -1)
+        x = x.view(x.size(0), -1)  # Преобразуем тензор в вектор
         x = self.fc_layers(x)
         return x
-
-
-MATE_VALUE_WHITE = 10000.0
-MATE_VALUE_BLACK = -10000.0
-
-def normalize_output(output):
-    return output / 10000.0
-
-class ChessDataset(Dataset):
-    def __init__(self, csv_file):
-        self.data = []
-        with open(csv_file, mode='r') as infile:
-            reader = csv.reader(infile)
-            next(reader)  # пропустить заголовок
-
-            count = 0
-            for row in reader:
-                if (count > 10000):
-                    break
-                count += 1
-                try:
-                    fen = row[0]
-                    evaluation = row[1]
-                    evaluation_value = 0.0
-
-                    if evaluation.startswith('#+'):
-                        evaluation_value = MATE_VALUE_WHITE
-                    elif evaluation.startswith('#-'):
-                        evaluation_value = MATE_VALUE_BLACK
-                    else:
-                        evaluation_value = float(evaluation.split()[0])
-
-                    self.data.append((fen, normalize_output(evaluation_value)))
-
-                except Exception as e:
-                    print(f"Unexpected error: {e} - row: {row}")
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        fen, evaluation_value = self.data[idx]
-
-        tensor = fen_to_tensor(fen)  # Предполагается, что у вас есть функция fen_to_tensor
-        tensor = torch.tensor(tensor.copy()).float()  # Преобразование в тензор PyTorch
-        evaluation_tensor = torch.tensor(evaluation_value).float()
-
-        return tensor, evaluation_tensor
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Process a CSV file containing FEN strings and evaluations")
-    parser.add_argument('dataset_file', type=str, help='Path to the input CSV file with training data')
-    args = parser.parse_args()
-    
-    dataset = ChessDataset(args.dataset_file)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-    model = ChessCNN()
-    criterion = nn.MSELoss()  # Используйте MSE для регрессии
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-
-    num_epochs = 1000
-    for epoch in range(num_epochs):
-        total_loss = 0.0
-        step = 0        
-        total_steps = len(dataloader)        
-        for inputs, labels in dataloader:
-            optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs.squeeze(), labels)
-            loss.backward()
-            optimizer.step()
-            
-            total_loss += loss.item()  # Суммируем потери
-            step += 1
-            
-            print(f"Epoch [{epoch+1}/{num_epochs}], Step [{step}/{total_steps}], Loss: {loss.item():.4f}", end='\r', flush=True)
-
-        average_loss = total_loss / total_steps
-        print(f"\nAverage Loss for Epoch [{epoch+1}/{num_epochs}]: {average_loss:.10f}")
-
-        # Сохранение модели и оптимизатора
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'loss': loss.item(),
-        }, f'model_epoch_{epoch+1}.pt')

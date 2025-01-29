@@ -1,1 +1,3 @@
-cnn/train_data/*
+cnn/train_data/
+cnn/__pycache__/
+model_*
