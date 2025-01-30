@@ -74,9 +74,11 @@ class GameSession {
     const moved = this.chess.move(move);
 
     if (!moved) {
-      console.log('not moved(');
+      console.log('not move(');
       return null;
     }
+
+    console.log('moved)');
 
     // Check if the board is not in the latest state of the history
     if (this.history.length !== this.currentIndex + 1) {
@@ -153,6 +155,10 @@ class GameSession {
 
   getPosition() {
     return this.chess.fen();
+  }
+
+  getCurrentTurn() {
+    return this.chess.turn() === 'w' ? 'white' : 'black';
   }
 
   save() {

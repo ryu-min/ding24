@@ -3,10 +3,26 @@ import { Chessboard, Square } from "react-chessboard";
 import GameSession from "../../lib/session";
 import { useInitialEffect } from "../../lib/utils";
 import "./board.scss";
+import {ShortMove} from 'chess.js';
 
 type Props = {
   game: GameSession;
 };
+
+function parseMove(moveString: string): ShortMove {
+  // Проверяем, что строка имеет длину 4
+  if (moveString.length !== 4) {
+      console.error('Неверный формат строки перемещения');
+      throw new Error('wrong format here');
+  }
+
+  const f: string = moveString.slice(0, 2); // Первые две буквы - начальная позиция
+  const t: string = moveString.slice(2, 4)
+  // Создайте объект ShortMove
+  const shortMove: ShortMove = { from: f as Square, to: t as Square, promotion: 'q' };
+
+  return shortMove;
+}
 
 function Board({ game }: Props): JSX.Element {
   const [position, setPosition] = useState<string>(game.getPosition());
@@ -16,9 +32,18 @@ function Board({ game }: Props): JSX.Element {
 
   // Observers
   useInitialEffect(() => {
-    game.onBoardChange((position) => {
-      console.log(game.timer);
-      setPosition(position);
+    game.onBoardChange(async (position) => {
+      setPosition(position); 
+      if (game.getCurrentTurn() == "white") {
+        console.log("first move");
+        const move = await fetchBestMove(game.getPosition());
+        console.log("recieve move ", move);
+        if (move) {
+          game.move(parseMove(move));
+        } else {
+          console.error("Не удалось получить лучший ход");
+        }
+      }
     });
   });
 
@@ -34,9 +59,31 @@ function Board({ game }: Props): JSX.Element {
     return () => window.removeEventListener("resize", handleResize);
   });
 
+  const fetchBestMove = async (fen: string) => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/best_move', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ fen }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+
+      const data = await response.json();
+      return data.best_move; // Возвращаем лучший ход
+    } catch (error) {
+      console.error('Ошибка при получении лучшего хода:', error);
+      return null;
+    }
+  };
+
   // Functions
-  const onDrop = (from: Square, to: Square) => {
-    if (!game.isGameOver()) {
+  const onDrop = (from: Square, to: Square) => {   
+    if (!game.isGameOver() && game.getCurrentTurn() == "black") {
       return !!game.move({ from, to, promotion: 'q'});
     }
 
@@ -47,7 +94,7 @@ function Board({ game }: Props): JSX.Element {
     <div className="board" data-testid="board">
       <Chessboard
         animationDuration={200}
-        boardOrientation="white"
+        boardOrientation="black"
         boardWidth={chessboardSize}
         position={position}
         onPieceDrop={onDrop}

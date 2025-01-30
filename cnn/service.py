@@ -3,8 +3,10 @@ import chess
 import torch
 from cnn import ChessCNN, load_model, predict_move
 import argparse
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 # Определяем функцию для загрузки модели
 def load_chess_model(model_path):
