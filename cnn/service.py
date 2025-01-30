@@ -34,12 +34,11 @@ def get_best_move():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Запуск REST-сервиса для шахматного AI")
     parser.add_argument('model_file', type=str, help='Path to the saved model file')
-    parser.add_argument('--depth', type=int, default=3, help='Depth for move prediction')
+    depth = 4
     
     args = parser.parse_args()
 
     # Загружаем модель с указанного пути
     model = load_chess_model(args.model_file)
-    depth = args.depth
 
     app.run(debug=True)
