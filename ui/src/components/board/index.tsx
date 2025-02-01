@@ -10,8 +10,8 @@ type Props = {
 };
 
 function parseMove(moveString: string): ShortMove {
-  // Проверяем, что строка имеет длину 4
-  if (moveString.length !== 4) {
+  const l = moveString.length; 
+  if (l !== 4 && l !== 5) {
       console.error('Неверный формат строки перемещения');
       throw new Error('wrong format here');
   }
