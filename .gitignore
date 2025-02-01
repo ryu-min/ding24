@@ -1,0 +1,4 @@
+cnn/train_data/
+cnn/__pycache__/
+/model_*
+ui/node_modules
