@@ -1,16 +1,15 @@
 from flask import Flask, request, jsonify
 import chess
 import torch
-from cnn import ChessCNN, load_model, predict_move, ChessCNN_New
+from cnn import ChessCNN, ChessCNN_3, ChessCNN_4, ChessCNN_5, ChessCNN_6, ChessCNN_7, load_model, predict_move
 import argparse
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-# Определяем функцию для загрузки модели
 def load_chess_model(model_path):
-    model = ChessCNN_New()
+    model = ChessCNN_6()
     optimizer = torch.optim.Adam(model.parameters())
     load_model(model, optimizer, model_path)
     return model
@@ -37,14 +36,13 @@ def get_best_move():
         return jsonify({'error': 'No legal moves available'}), 400
 
 if __name__ == '__main__':
-    # parser = argparse.ArgumentParser(description="Запуск REST-сервиса для шахматного AI")
-    # parser.add_argument('model_file', type=str, help='Path to the saved model file')
-    model_file =  ".\small_model_300k_epoch_50.pt"
-    depth = 3
+    parser = argparse.ArgumentParser(description="Запуск REST-сервиса для шахматного AI")
+    parser.add_argument('model_file', type=str, help='Path to the saved model file')
+    args = parser.parse_args()
+    # model_file =  ".\model_random_new_6_epoch_3.pt"
+    model_file = args.model_file
+    depth = 2
     
-    # args = parser.parse_args()
-
-    # Загружаем модель с указанного пути
     model = load_chess_model(model_file)
 
     app.run(debug=True)

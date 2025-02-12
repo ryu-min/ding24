@@ -25,7 +25,7 @@ class ChessDataset(Dataset):
 
             count = 0
             for row in reader:
-                if count > 1000000:
+                if count > 10000:
                     break
                 count += 1
                 try:
@@ -117,4 +117,4 @@ if __name__ == "__main__":
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': loss.item(),
-        }, f'model_1kk_epoch_{epoch+1}.pt')
+        }, f'model_random_new_6_epoch_{epoch+1}.pt')
