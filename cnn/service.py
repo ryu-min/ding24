@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import chess
 import torch
-from cnn import ChessCNN, ChessCNN_3, ChessCNN_4, ChessCNN_5, ChessCNN_6, ChessCNN_7, load_model, predict_move
+from cnn import ChessCNN, load_model, predict_move
 import argparse
 from flask_cors import CORS
 
@@ -9,7 +9,7 @@ app = Flask(__name__)
 CORS(app)
 
 def load_chess_model(model_path):
-    model = ChessCNN_6()
+    model = ChessCNN()
     optimizer = torch.optim.Adam(model.parameters())
     load_model(model, optimizer, model_path)
     return model
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # model_file =  ".\model_random_new_6_epoch_3.pt"
     model_file = args.model_file
-    depth = 2
+    depth = 1
     
     model = load_chess_model(model_file)
 
